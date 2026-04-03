@@ -1,6 +1,6 @@
 # BuyWhere Python SDK
 
-Official Python SDK for the [BuyWhere](https://buywhere.io) Product Catalog API — the agent-native product search API for Singapore.
+Official Python SDK for the [BuyWhere](https://buywhere.ai) Product Catalog API — the agent-native product search API for Singapore.
 
 ## Installation
 
@@ -8,23 +8,23 @@ Official Python SDK for the [BuyWhere](https://buywhere.io) Product Catalog API 
 pip install buywhere-sdk
 ```
 
-Or from source:
+Or from source (clone `buywhere-catalog-api` and run from the `sdk/` directory):
 
 ```bash
-pip install -e sdk/python/
+pip install -e .
 ```
 
 ## Quickstart
 
 ```python
-from buywhere import BuyWhereClient
+from buywhere_sdk import BuyWhere
 
-client = BuyWhereClient(api_key="key_xxx", base_url="http://143.198.87.39:8000")
+client = BuyWhere(api_key="bw_live_your_key_here")
 
 # Search products in Singapore
-results = client.products.search(q="iphone 15", country="sg", limit=10)
-for r in results.results:
-    print(r.title, r.price.amount, r.price.currency)
+results = client.search("wireless headphones", limit=5)
+for p in results.items:
+    print(p.name, p.price, p.currency, p.source)
 ```
 
 ## Usage
@@ -32,76 +32,76 @@ for r in results.results:
 ### Sync client
 
 ```python
-from buywhere import BuyWhereClient
+from buywhere_sdk import BuyWhere
 
-client = BuyWhereClient(api_key="key_xxx")
+client = BuyWhere(api_key="bw_live_your_key_here")
 
 # Search products
-results = client.products.search(q="iphone 15", country="sg", limit=10)
+results = client.search("iphone 15", limit=10)
+for p in results.items:
+    print(p.name, p.price, p.buy_url)
 
-# Get product by ID
-product = client.products.get(product_id="abc123")
+# Get product by ID (integer)
+product = client.get_product(12345)
+print(product.name, product.is_available)
 
-# Compare prices across merchants
-prices = client.products.compare_prices(product_id="abc123")
-print(prices.best_price)
+# Find cheapest listing across all platforms
+cheapest = client.best_price("Nintendo Switch OLED")
+print(f"Best price: SGD {cheapest.price} at {cheapest.source}")
 
 # List categories
-categories = client.categories.list()
-
-# Category detail
-electronics = client.categories.get("electronics")
-print(electronics.subcategories)
+cats = client.list_categories()
+print(cats.total, "categories available")
 ```
 
 ### Async client
 
 ```python
 import asyncio
-from buywhere import AsyncBuyWhereClient
+from buywhere_sdk import AsyncBuyWhere
 
 async def main():
-    async with AsyncBuyWhereClient(api_key="key_xxx") as client:
-        results = await client.products.search(q="airfryer", country="sg")
-        for r in results.results:
-            print(r.title, r.price.amount)
+    async with AsyncBuyWhere(api_key="bw_live_your_key_here") as client:
+        results = await client.search("airfryer", limit=10)
+        for p in results.items:
+            print(p.name, p.price)
 
 asyncio.run(main())
+```
+
+### Filtering
+
+```python
+results = client.search(
+    "headphones",
+    category="Electronics",
+    min_price=50.0,
+    max_price=300.0,
+    source="shopee_sg",   # lazada_sg | shopee_sg | qoo10_sg | carousell_sg
+    limit=20,
+)
 ```
 
 ### Pagination
 
 ```python
-results = client.products.search(q="laptop", limit=10)
-while results.has_more:
-    results = client.products.search(q="laptop", limit=10, cursor=results.next_cursor)
-    for r in results.results:
-        print(r.title)
-```
+results = client.search("laptop", limit=10)
+print(f"Total: {results.total}, showing {len(results.items)}, has_more: {results.has_more}")
 
-### Filtering and sorting
-
-```python
-results = client.products.search(
-    q="headphones",
-    category="electronics/audio",
-    price_min=50.0,
-    price_max=300.0,
-    platform="shopee",
-    sort="price_asc",
-    limit=20,
-)
+# Next page
+next_page = client.search("laptop", limit=10, offset=10)
 ```
 
 ## Error handling
 
 ```python
-from buywhere import BuyWhereClient, NotFoundError, AuthenticationError, RateLimitError
+from buywhere_sdk import BuyWhere
+from buywhere_sdk.exceptions import NotFoundError, AuthenticationError, RateLimitError
 
-client = BuyWhereClient(api_key="key_xxx")
+client = BuyWhere(api_key="bw_live_your_key_here")
 
 try:
-    product = client.products.get("does-not-exist")
+    product = client.get_product(99999999)
 except NotFoundError:
     print("Product not found")
 except AuthenticationError:
@@ -112,47 +112,42 @@ except RateLimitError:
 
 ## Configuration
 
-| Parameter  | Default                      | Description                       |
-|------------|------------------------------|-----------------------------------|
-| `api_key`  | *(required)*                 | Your BuyWhere API key             |
-| `base_url` | `https://api.buywhere.io`    | Override for staging/local        |
-| `timeout`  | `30.0`                       | Request timeout in seconds        |
+| Parameter  | Default                    | Description                        |
+|------------|----------------------------|------------------------------------|
+| `api_key`  | *(required)*               | Your BuyWhere API key              |
+| `base_url` | `https://api.buywhere.ai`  | Override for staging/local testing |
+| `timeout`  | `30.0`                     | Request timeout in seconds         |
 
 ## LangChain integration
 
-BuyWhere ships a first-class LangChain tool so your agents can search the catalog in natural language.
+BuyWhere ships a first-class LangChain toolkit so your agents can search the catalog in natural language.
 
 ```bash
-pip install buywhere-sdk[langchain]
+pip install "buywhere-sdk[langchain]"
 ```
 
 ```python
-from buywhere import BuyWhereClient, BuyWhereTool
+from buywhere_sdk.langchain import BuyWhereToolkit
 from langchain_openai import ChatOpenAI
 from langchain.agents import initialize_agent, AgentType
 
-client = BuyWhereClient(api_key="bw_...")
-tool = BuyWhereTool(client=client, country="sg")
-agent = initialize_agent([tool], ChatOpenAI(model="gpt-4o-mini"), agent=AgentType.OPENAI_FUNCTIONS, verbose=True)
-agent.run("Find me noise-cancelling headphones under SGD 200 on Shopee")
-```
+toolkit = BuyWhereToolkit(api_key="bw_live_your_key_here")
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-The tool exposes structured inputs so the LLM can pass filters (category, price range, platform) directly:
+agent = initialize_agent(
+    toolkit.get_tools(),
+    llm,
+    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    verbose=True,
+)
 
-```python
-# Use the tool directly without an agent
-result = tool.run("wireless earbuds")
+result = agent.run("Find the cheapest noise-cancelling headphones under SGD 200")
 print(result)
-# Found 48 products for 'wireless earbuds' (showing 5):
-# 1. Sony WF-1000XM5
-#    Price: SGD 279.00 (was 349.00)
-#    Platform: shopee | Merchant: Sony Official Store
-#    ...
 ```
 
 ## Requirements
 
-- Python 3.9+
-- `httpx >= 0.25`
+- Python 3.10+
+- `httpx >= 0.27`
 - `pydantic >= 2.0`
-- `langchain-core >= 0.1` *(optional — only for `BuyWhereTool`)*
+- `langchain >= 0.3` *(optional — only for `BuyWhereToolkit`)*
